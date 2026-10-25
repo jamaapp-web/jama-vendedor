@@ -13,12 +13,7 @@ app.post('/api/productos', async (req, res) => {
   const { negocioId, nombre, precio, opciones } = req.body;
   try {
     const producto = await prisma.producto.create({
-      data: {
-        negocioId,
-        nombre,
-        precio,
-        opciones: { create: opciones }
-      },
+      data: { negocioId, nombre, precio, opciones: { create: opciones } },
       include: { opciones: true }
     });
     res.json(producto);
@@ -84,7 +79,7 @@ app.get('/api/negocios/:id/pedidos', async (req, res) => {
   }
 });
 
-// 4. Cargar el catálogo para el Punto de Venta
+// 4. Cargar el catálogo
 app.get('/api/negocios/:id/productos', async (req, res) => {
   try {
     const productos = await prisma.producto.findMany({
@@ -97,7 +92,7 @@ app.get('/api/negocios/:id/productos', async (req, res) => {
   }
 });
 
-// 5. NUEVO: Actualizar el estatus de un pedido
+// 5. Actualizar el estatus
 app.put('/api/pedidos/:id/estatus', async (req, res) => {
   try {
     const { estatus } = req.body;
@@ -109,6 +104,19 @@ app.put('/api/pedidos/:id/estatus', async (req, res) => {
   } catch (error) {
     console.error("Error al actualizar estatus:", error);
     res.status(500).json({ error: 'Fallo al actualizar estatus' });
+  }
+});
+
+// 6. NUEVO: Traer Billetera del Negocio
+app.get('/api/negocios/:id', async (req, res) => {
+  try {
+    const negocio = await prisma.negocio.findUnique({
+      where: { id: req.params.id }
+    });
+    res.json(negocio);
+  } catch (error) {
+    console.error("Error al buscar negocio:", error);
+    res.status(500).json({ error: 'Fallo al cargar la billetera' });
   }
 });
 
