@@ -39,7 +39,8 @@ app.post('/api/pedidos', async (req, res) => {
         tipoVenta,
         total,
         comision,
-        estatus: tipoVenta === 'LOCAL' ? 'COMPLETADO_LOCAL' : 'NUEVO',
+        // ESTA ES LA PALABRA CORRECTA QUE PRISMA SÍ ACEPTA
+        estatus: tipoVenta === 'LOCAL' ? 'COMPLETADO_LOCAL' : 'BUSCANDO_REPARTIDOR',
         nipEntrega: tipoVenta === 'LOCAL' ? null : Math.floor(1000 + Math.random() * 9000).toString(),
         detalles: { create: detalles }
       },
@@ -107,7 +108,7 @@ app.put('/api/pedidos/:id/estatus', async (req, res) => {
   }
 });
 
-// 6. NUEVO: Traer Billetera del Negocio
+// 6. Traer Billetera del Negocio
 app.get('/api/negocios/:id', async (req, res) => {
   try {
     const negocio = await prisma.negocio.findUnique({
