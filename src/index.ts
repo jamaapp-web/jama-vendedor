@@ -8,7 +8,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. Crear un producto con modificadores
 app.post('/api/productos', async (req, res) => {
   const { negocioId, nombre, precio, opciones } = req.body;
   try {
@@ -18,18 +17,29 @@ app.post('/api/productos', async (req, res) => {
     });
     res.json(producto);
   } catch (error) {
-    console.error("Error al crear el producto:", error);
     res.status(500).json({ error: 'Fallo al crear el producto' });
   }
 });
 
-// 2. Crear un pedido (Local o a Domicilio)
+// NUEVO: Apagar o prender un producto
+app.put('/api/productos/:id/disponibilidad', async (req, res) => {
+  try {
+    const { disponible } = req.body;
+    const producto = await prisma.producto.update({
+      where: { id: req.params.id },
+      data: { disponible }
+    });
+    res.json(producto);
+  } catch (error) {
+    res.status(500).json({ error: 'Fallo al actualizar disponibilidad' });
+  }
+});
+
 app.post('/api/pedidos', async (req, res) => {
   const { negocioId, clienteId, tipoVenta, detalles } = req.body;
   try {
     const total = detalles.reduce((acc: number, item: any) => acc + item.subtotal, 0);
     const negocio = await prisma.negocio.findUnique({ where: { id: negocioId } });
-    
     const comision = (tipoVenta === 'LOCAL') ? 0 : (total * 0.08);
 
     const pedido = await prisma.pedido.create({
@@ -39,12 +49,11 @@ app.post('/api/pedidos', async (req, res) => {
         tipoVenta,
         total,
         comision,
-        // ESTA ES LA PALABRA CORRECTA QUE PRISMA SÍ ACEPTA
         estatus: tipoVenta === 'LOCAL' ? 'COMPLETADO_LOCAL' : 'BUSCANDO_REPARTIDOR',
         nipEntrega: tipoVenta === 'LOCAL' ? null : Math.floor(1000 + Math.random() * 9000).toString(),
         detalles: { create: detalles }
       },
-      include: { detalles: true }
+      include: { detalles: { include: { producto: true } } }
     });
     
     if (comision > 0 && negocio) {
@@ -58,42 +67,31 @@ app.post('/api/pedidos', async (req, res) => {
     }
     res.json(pedido);
   } catch (error) {
-    console.error("Error al crear el pedido:", error);
     res.status(500).json({ error: 'Fallo al crear el pedido' });
   }
 });
 
-// 3. Ver panel de pedidos activos
 app.get('/api/negocios/:id/pedidos', async (req, res) => {
   try {
     const pedidos = await prisma.pedido.findMany({
-      where: { 
-        negocioId: req.params.id, 
-        estatus: { notIn: ['CANCELADO', 'COMPLETADO_LOCAL', 'ENTREGADO'] } 
-      },
+      where: { negocioId: req.params.id, estatus: { notIn: ['CANCELADO', 'COMPLETADO_LOCAL', 'ENTREGADO'] } },
       include: { detalles: { include: { producto: true } } }
     });
     res.json(pedidos);
   } catch (error) {
-    console.error("Error al buscar pedidos:", error);
     res.status(500).json({ error: 'Fallo al cargar pedidos' });
   }
 });
 
-// 4. Cargar el catálogo
 app.get('/api/negocios/:id/productos', async (req, res) => {
   try {
-    const productos = await prisma.producto.findMany({
-      where: { negocioId: req.params.id }
-    });
+    const productos = await prisma.producto.findMany({ where: { negocioId: req.params.id } });
     res.json(productos);
   } catch (error) {
-    console.error("Error al buscar productos:", error);
     res.status(500).json({ error: 'Fallo al cargar el catálogo' });
   }
 });
 
-// 5. Actualizar el estatus
 app.put('/api/pedidos/:id/estatus', async (req, res) => {
   try {
     const { estatus } = req.body;
@@ -103,21 +101,61 @@ app.put('/api/pedidos/:id/estatus', async (req, res) => {
     });
     res.json(pedido);
   } catch (error) {
-    console.error("Error al actualizar estatus:", error);
     res.status(500).json({ error: 'Fallo al actualizar estatus' });
   }
 });
 
-// 6. Traer Billetera del Negocio
 app.get('/api/negocios/:id', async (req, res) => {
   try {
-    const negocio = await prisma.negocio.findUnique({
-      where: { id: req.params.id }
+    const negocio = await prisma.negocio.findUnique({ where: { id: req.params.id } });
+    res.json(negocio);
+  } catch (error) {
+    res.status(500).json({ error: 'Fallo al cargar la billetera' });
+  }
+});
+
+// NUEVO: Cambiar horario del negocio
+app.put('/api/negocios/:id/horario', async (req, res) => {
+  try {
+    const { horaApertura, horaCierre } = req.body;
+    const negocio = await prisma.negocio.update({
+      where: { id: req.params.id },
+      data: { horaApertura, horaCierre }
     });
     res.json(negocio);
   } catch (error) {
-    console.error("Error al buscar negocio:", error);
-    res.status(500).json({ error: 'Fallo al cargar la billetera' });
+    res.status(500).json({ error: 'Fallo al actualizar horario' });
+  }
+});
+
+// NUEVO: Obtener corte del día
+app.get('/api/negocios/:id/corte', async (req, res) => {
+  try {
+    const hace24Horas = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const pedidos = await prisma.pedido.findMany({
+      where: {
+        negocioId: req.params.id,
+        fecha: { gte: hace24Horas },
+        estatus: 'COMPLETADO_LOCAL'
+      },
+      include: { detalles: { include: { producto: true } } }
+    });
+
+    let totalVendido = 0;
+    const items: Record<string, { nombre: string, cantidad: number, subtotal: number }> = {};
+
+    pedidos.forEach(p => {
+      totalVendido += p.total;
+      p.detalles.forEach(d => {
+        if (!items[d.productoId]) items[d.productoId] = { nombre: d.producto.nombre, cantidad: 0, subtotal: 0 };
+        items[d.productoId].cantidad += d.cantidad;
+        items[d.productoId].subtotal += d.subtotal;
+      });
+    });
+
+    res.json({ total: totalVendido, resumen: Object.values(items) });
+  } catch (error) {
+    res.status(500).json({ error: 'Fallo al procesar el corte' });
   }
 });
 
