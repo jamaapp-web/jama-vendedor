@@ -1,104 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
-model Usuario {
-  id                String   @id @default(uuid())
-  nombre            String
-  telefono          String   @unique
-  rol               Rol      @default(CLIENTE)
-  calificacion      Float    @default(5.0)
-  pedidosCliente    Pedido[] @relation("ClientePedidos")
-  pedidosRepartidor Pedido[] @relation("RepartidorPedidos")
-  negocios          Negocio[]
-  creadoEn          DateTime @default(now())
-  latitudActual     Float?
-  longitudActual    Float?
-}
-
 model Negocio {
-  id              String     @id @default(uuid())
-  duenoId         String
-  dueno           Usuario    @relation(fields: [duenoId], references: [id])
-  nombre          String
-  latitud         Float
-  longitud        Float
-  saldo           Float      @default(0.0)
-  estaActivo      Boolean    @default(true)
-  suscripcionPOS  Boolean    @default(false) 
-  pedidos         Pedido[]
-  productos       Producto[]
-  creadoEn        DateTime   @default(now())
-  horaApertura String   @default("08:00")
-  horaCierre   String   @default("20:00")
+  id           String     @id @default(uuid())
+  nombre       String
+  correo       String     @unique 
+  password     String     
+  categoria    String     @default("General") 
+  fotoUrl      String?    
+  saldo        Float      @default(0.0)
+  estaActivo   Boolean    @default(true)
+  horaApertura String     @default("08:00")
+  horaCierre   String     @default("20:00")
+  productos    Producto[]
+  pedidos      Pedido[]
+}
+
+model Cliente {
+  id        String   @id 
+  nombre    String
+  correo    String
+  fotoUrl   String?
+  pedidos   Pedido[]
 }
 
 model Producto {
-  id          String           @id @default(uuid())
-  negocioId   String
-  negocio     Negocio          @relation(fields: [negocioId], references: [id])
-  nombre      String
-  descripcion String?
-  precio      Float
-  fotoUrl     String?
-  activo      Boolean          @default(true)
-  opciones    OpcionProducto[]
-  detalles    DetallePedido[]
-  disponible   Boolean  @default(true)
+  id         String          @id @default(uuid())
+  negocioId  String
+  negocio    Negocio         @relation(fields: [negocioId], references: [id])
+  nombre     String
+  precio     Float
+  fotoUrl    String?
+  disponible Boolean         @default(true)
+  opciones   OpcionProducto[]
+  detalles   DetallePedido[]
 }
 
 model OpcionProducto {
-  id          String   @id @default(uuid())
-  productoId  String
-  producto    Producto @relation(fields: [productoId], references: [id])
-  nombre      String   
-  precioExtra Float    @default(0.0)
+  id         String   @id @default(uuid())
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+  nombre     String
+  precioExtra Float   @default(0.0)
 }
 
 model Pedido {
-  id            String          @id @default(uuid())
-  negocioId     String
-  negocio       Negocio         @relation(fields: [negocioId], references: [id])
-  clienteId     String?         
-  cliente       Usuario?        @relation("ClientePedidos", fields: [clienteId], references: [id])
-  repartidorId  String?
-  repartidor    Usuario?        @relation("RepartidorPedidos", fields: [repartidorId], references: [id])
-  total         Float
-  comision      Float
-  tipoVenta     TipoVenta       @default(DOMICILIO)
-  estatus       EstatusPedido   @default(BUSCANDO_REPARTIDOR)
-  nipEntrega    String?
-  detalles      DetallePedido[]
-  creadoEn      DateTime        @default(now())
-  fecha        DateTime @default(now())
+  id         String          @id @default(uuid())
+  negocioId  String
+  negocio    Negocio         @relation(fields: [negocioId], references: [id])
+  clienteId  String
+  cliente    Cliente         @relation(fields: [clienteId], references: [id])
+  fecha      DateTime        @default(now())
+  total      Float
+  comision   Float           @default(0.0)
+  estatus    EstatusPedido   @default(NUEVO)
+  tipoVenta  String          
+  metodoPago String          @default("EFECTIVO") 
+  nipEntrega String?
+  detalles   DetallePedido[]
 }
 
 model DetallePedido {
-  id          String   @id @default(uuid())
-  pedidoId    String
-  pedido      Pedido   @relation(fields: [pedidoId], references: [id])
-  productoId  String
-  producto    Producto @relation(fields: [productoId], references: [id])
-  cantidad    Int
-  subtotal    Float
-  notas       String?  
-}
-
-enum Rol {
-  CLIENTE
-  REPARTIDOR
-  ADMIN
-}
-
-enum TipoVenta {
-  DOMICILIO
-  LOCAL
+  id         String   @id @default(uuid())
+  pedidoId   String
+  pedido     Pedido   @relation(fields: [pedidoId], references: [id])
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+  cantidad   Int
+  subtotal   Float
+  notas      String?
 }
 
 enum EstatusPedido {
