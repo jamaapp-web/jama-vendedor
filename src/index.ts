@@ -17,9 +17,7 @@ app.post('/api/productos', async (req, res) => {
         negocioId,
         nombre,
         precio,
-        opciones: {
-          create: opciones
-        }
+        opciones: { create: opciones }
       },
       include: { opciones: true }
     });
@@ -33,12 +31,10 @@ app.post('/api/productos', async (req, res) => {
 // 2. Crear un pedido (Local o a Domicilio)
 app.post('/api/pedidos', async (req, res) => {
   const { negocioId, clienteId, tipoVenta, detalles } = req.body;
-  
   try {
     const total = detalles.reduce((acc: number, item: any) => acc + item.subtotal, 0);
     const negocio = await prisma.negocio.findUnique({ where: { id: negocioId } });
     
-    // Regla de oro: Cero comisión en venta LOCAL. 8% en DOMICILIO.
     const comision = (tipoVenta === 'LOCAL') ? 0 : (total * 0.08);
 
     const pedido = await prisma.pedido.create({
@@ -48,7 +44,7 @@ app.post('/api/pedidos', async (req, res) => {
         tipoVenta,
         total,
         comision,
-        estatus: tipoVenta === 'LOCAL' ? 'COMPLETADO_LOCAL' : 'BUSCANDO_REPARTIDOR',
+        estatus: tipoVenta === 'LOCAL' ? 'COMPLETADO_LOCAL' : 'NUEVO',
         nipEntrega: tipoVenta === 'LOCAL' ? null : Math.floor(1000 + Math.random() * 9000).toString(),
         detalles: { create: detalles }
       },
@@ -64,7 +60,6 @@ app.post('/api/pedidos', async (req, res) => {
         }
       });
     }
-
     res.json(pedido);
   } catch (error) {
     console.error("Error al crear el pedido:", error);
@@ -72,7 +67,7 @@ app.post('/api/pedidos', async (req, res) => {
   }
 });
 
-// 3. Ver panel de pedidos activos (Para la pantalla del vendedor)
+// 3. Ver panel de pedidos activos
 app.get('/api/negocios/:id/pedidos', async (req, res) => {
   try {
     const pedidos = await prisma.pedido.findMany({
@@ -84,28 +79,40 @@ app.get('/api/negocios/:id/pedidos', async (req, res) => {
     });
     res.json(pedidos);
   } catch (error) {
-    console.error("Error al buscar pedidos:", error); // <-- Chismoso agregado
+    console.error("Error al buscar pedidos:", error);
     res.status(500).json({ error: 'Fallo al cargar pedidos' });
   }
 });
 
-// 4. Cargar el catálogo para el Punto de Venta Local
+// 4. Cargar el catálogo para el Punto de Venta
 app.get('/api/negocios/:id/productos', async (req, res) => {
   try {
-    // <-- SE QUITÓ EL "activo: true" PARA QUE NO TRUENE PRISMA
     const productos = await prisma.producto.findMany({
       where: { negocioId: req.params.id }
     });
     res.json(productos);
   } catch (error) {
-    console.error("Error al buscar productos:", error); // <-- Chismoso agregado
+    console.error("Error al buscar productos:", error);
     res.status(500).json({ error: 'Fallo al cargar el catálogo' });
   }
 });
 
-// Convertimos explícitamente el puerto a número para evitar el choque con TypeScript
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+// 5. NUEVO: Actualizar el estatus de un pedido
+app.put('/api/pedidos/:id/estatus', async (req, res) => {
+  try {
+    const { estatus } = req.body;
+    const pedido = await prisma.pedido.update({
+      where: { id: req.params.id },
+      data: { estatus }
+    });
+    res.json(pedido);
+  } catch (error) {
+    console.error("Error al actualizar estatus:", error);
+    res.status(500).json({ error: 'Fallo al actualizar estatus' });
+  }
+});
 
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`API jalando al 100 en el puerto ${PORT} y abierta a toda la red local`);
+  console.log(`API jalando al 100 en el puerto ${PORT}`);
 });
