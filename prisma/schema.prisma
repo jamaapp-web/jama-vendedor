@@ -9,18 +9,22 @@ datasource db {
 }
 
 model Negocio {
-  id           String     @id @default(uuid())
-  nombre       String
-  correo       String     @unique 
-  password     String     
-  categoria    String     @default("General") 
-  fotoUrl      String?    
-  saldo        Float      @default(0.0)
-  estaActivo   Boolean    @default(true)
-  horaApertura String     @default("08:00")
-  horaCierre   String     @default("20:00")
-  productos    Producto[]
-  pedidos      Pedido[]
+  id                  String     @id @default(uuid())
+  nombre              String
+  correo              String     @unique
+  password            String
+  categoria           String?
+  fotoUrl             String?
+  horaApertura        String     @default("08:00")
+  horaCierre          String     @default("20:00")
+  estaActivo          Boolean    @default(true)
+  saldo               Float      @default(0.0)
+  latitud             Float?     // NUEVO: Coordenadas
+  longitud            Float?     // NUEVO: Coordenadas
+  aceptaEfectivo      Boolean    @default(true) // NUEVO: Switch
+  aceptaTransferencia Boolean    @default(false) // NUEVO: Switch
+  productos           Producto[]
+  pedidos             Pedido[]
 }
 
 model Cliente {
