@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// 1. NUEVAS RUTAS MULTI-NEGOCIO Y LOGIN
+// 1. LOGIN Y NEGOCIOS
 // ==========================================
 
 // Login para la app Android del Vendedor
@@ -40,106 +40,6 @@ app.get('/api/negocios', async (req, res) => {
   }
 });
 
-// Registrar un cliente nuevo (Google/Apple Login)
-app.post('/api/clientes', async (req, res) => {
-  const { id, nombre, correo, fotoUrl } = req.body;
-  try {
-    const cliente = await prisma.cliente.upsert({
-      where: { id },
-      update: { nombre, fotoUrl },
-      create: { id, nombre, correo, fotoUrl }
-    });
-    res.json(cliente);
-  } catch (error) {
-    res.status(500).json({ error: 'Fallo al registrar cliente' });
-  }
-});
-
-// ==========================================
-// 2. RUTAS EXISTENTES ACTUALIZADAS
-// ==========================================
-
-app.post('/api/productos', async (req, res) => {
-  const { negocioId, nombre, precio, opciones } = req.body;
-  try {
-    const producto = await prisma.producto.create({
-      data: { negocioId, nombre, precio, opciones: { create: opciones } },
-      include: { opciones: true }
-    });
-    res.json(producto);
-  } catch (error) { res.status(500).json({ error: 'Fallo al crear' }); }
-});
-
-app.put('/api/productos/:id/disponibilidad', async (req, res) => {
-  try {
-    const producto = await prisma.producto.update({
-      where: { id: req.params.id },
-      data: { disponible: req.body.disponible }
-    });
-    res.json(producto);
-  } catch (error) { res.status(500).json({ error: 'Fallo al actualizar' }); }
-});
-
-// Pedido actualizado para recibir el metodoPago
-app.post('/api/pedidos', async (req, res) => {
-  const { negocioId, clienteId, tipoVenta, metodoPago, detalles } = req.body;
-  try {
-    const total = detalles.reduce((acc: number, item: any) => acc + item.subtotal, 0);
-    const negocio = await prisma.negocio.findUnique({ where: { id: negocioId } });
-    const comision = (tipoVenta === 'LOCAL') ? 0 : (total * 0.08);
-
-    const pedido = await prisma.pedido.create({
-      data: {
-        negocioId,
-        clienteId,
-        tipoVenta,
-        metodoPago: metodoPago || "EFECTIVO", // Se guarda el método de pago
-        total,
-        comision,
-        estatus: tipoVenta === 'LOCAL' ? 'COMPLETADO_LOCAL' : 'BUSCANDO_REPARTIDOR',
-        nipEntrega: tipoVenta === 'LOCAL' ? null : Math.floor(1000 + Math.random() * 9000).toString(),
-        detalles: { create: detalles }
-      },
-      include: { detalles: { include: { producto: true } } }
-    });
-    
-    if (comision > 0 && negocio) {
-      await prisma.negocio.update({
-        where: { id: negocioId },
-        data: { saldo: negocio.saldo - comision, estaActivo: (negocio.saldo - comision) >= 10 }
-      });
-    }
-    res.json(pedido);
-  } catch (error) { res.status(500).json({ error: 'Fallo al crear el pedido' }); }
-});
-
-app.get('/api/negocios/:id/pedidos', async (req, res) => {
-  try {
-    const pedidos = await prisma.pedido.findMany({
-      where: { negocioId: req.params.id, estatus: { notIn: ['CANCELADO', 'COMPLETADO_LOCAL', 'ENTREGADO'] } },
-      include: { detalles: { include: { producto: true } } }
-    });
-    res.json(pedidos);
-  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
-});
-
-app.get('/api/negocios/:id/productos', async (req, res) => {
-  try {
-    const productos = await prisma.producto.findMany({ where: { negocioId: req.params.id } });
-    res.json(productos);
-  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
-});
-
-app.put('/api/pedidos/:id/estatus', async (req, res) => {
-  try {
-    const pedido = await prisma.pedido.update({
-      where: { id: req.params.id },
-      data: { estatus: req.body.estatus }
-    });
-    res.json(pedido);
-  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
-});
-
 app.get('/api/negocios/:id', async (req, res) => {
   try {
     const negocio = await prisma.negocio.findUnique({ where: { id: req.params.id } });
@@ -157,11 +57,147 @@ app.put('/api/negocios/:id/horario', async (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Fallo' }); }
 });
 
+// ==========================================
+// 2. CLIENTES
+// ==========================================
+
+// Registrar un cliente nuevo (Google/Apple Login)
+app.post('/api/clientes', async (req, res) => {
+  const { id, nombre, correo, fotoUrl } = req.body;
+  try {
+    const cliente = await prisma.cliente.upsert({
+      where: { id },
+      update: { nombre, fotoUrl },
+      create: { id, nombre, correo, fotoUrl }
+    });
+    res.json(cliente);
+  } catch (error) {
+    res.status(500).json({ error: 'Fallo al registrar cliente' });
+  }
+});
+
+// ==========================================
+// 3. PRODUCTOS Y CATÁLOGO
+// ==========================================
+
+// Obtener todos los productos de un negocio (INCLUYE OPCIONES/MODIFICADORES)
+app.get('/api/negocios/:id/productos', async (req, res) => {
+  try {
+    const productos = await prisma.producto.findMany({ 
+      where: { negocioId: req.params.id },
+      include: { opciones: true } // Esto es vital para que carguen los extra
+    });
+    res.json(productos);
+  } catch (error) { res.status(500).json({ error: 'Fallo al cargar catálogo' }); }
+});
+
+// Crear un nuevo producto base (Desde el botón "+" flotante)
+app.post('/api/negocios/:id/productos', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nombre, precio } = req.body;
+    
+    const nuevoProducto = await prisma.producto.create({
+      data: {
+        nombre,
+        precio,
+        disponible: true,
+        negocioId: id
+      },
+      include: { opciones: true }
+    });
+    res.json(nuevoProducto);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear el producto' });
+  }
+});
+
+// Actualizar disponibilidad del producto (El Switch Verde)
+app.put('/api/productos/:id/disponibilidad', async (req, res) => {
+  try {
+    const producto = await prisma.producto.update({
+      where: { id: req.params.id },
+      data: { disponible: req.body.disponible }
+    });
+    res.json(producto);
+  } catch (error) { res.status(500).json({ error: 'Fallo al actualizar' }); }
+});
+
+// ==========================================
+// 4. PEDIDOS, KDS Y CAJA
+// ==========================================
+
+// Crear un pedido (Local o Domicilio)
+app.post('/api/pedidos', async (req, res) => {
+  const { negocioId, clienteId, tipoVenta, metodoPago, detalles } = req.body;
+  try {
+    const total = detalles.reduce((acc: number, item: any) => acc + item.subtotal, 0);
+    const negocio = await prisma.negocio.findUnique({ where: { id: negocioId } });
+    const comision = (tipoVenta === 'LOCAL') ? 0 : (total * 0.08);
+
+    const pedido = await prisma.pedido.create({
+      data: {
+        negocioId,
+        clienteId,
+        tipoVenta,
+        metodoPago: metodoPago || "EFECTIVO",
+        total,
+        comision,
+        // Si es local se va a pendiente para el KDS de cocina, si no, busca repartidor
+        estatus: tipoVenta === 'LOCAL' ? 'PENDIENTE_LOCAL' : 'BUSCANDO_REPARTIDOR',
+        nipEntrega: tipoVenta === 'LOCAL' ? null : Math.floor(1000 + Math.random() * 9000).toString(),
+        detalles: { create: detalles }
+      },
+      include: { detalles: { include: { producto: true } } }
+    });
+    
+    // Descuento de comisión de la billetera
+    if (comision > 0 && negocio) {
+      await prisma.negocio.update({
+        where: { id: negocioId },
+        data: { saldo: negocio.saldo - comision, estaActivo: (negocio.saldo - comision) >= 10 }
+      });
+    }
+    res.json(pedido);
+  } catch (error) { res.status(500).json({ error: 'Fallo al crear el pedido' }); }
+});
+
+// Obtener pedidos activos para el Monitor de Cocina (KDS)
+app.get('/api/negocios/:id/pedidos', async (req, res) => {
+  try {
+    const pedidos = await prisma.pedido.findMany({
+      where: { 
+        negocioId: req.params.id, 
+        estatus: { notIn: ['CANCELADO', 'COMPLETADO_LOCAL', 'ENTREGADO'] } 
+      },
+      include: { detalles: { include: { producto: true } } }
+    });
+    res.json(pedidos);
+  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
+});
+
+// Actualizar estatus del pedido (Ej. "Preparar y Llamar Repartidor")
+app.put('/api/pedidos/:id/estatus', async (req, res) => {
+  try {
+    const pedido = await prisma.pedido.update({
+      where: { id: req.params.id },
+      data: { estatus: req.body.estatus }
+    });
+    res.json(pedido);
+  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
+});
+
+// Corte de caja de las últimas 24 hrs
 app.get('/api/negocios/:id/corte', async (req, res) => {
   try {
     const hace24Horas = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const pedidos = await prisma.pedido.findMany({
-      where: { negocioId: req.params.id, fecha: { gte: hace24Horas }, estatus: 'COMPLETADO_LOCAL' },
+      where: { 
+        negocioId: req.params.id, 
+        fecha: { gte: hace24Horas }, 
+        // Sumamos ventas locales y a domicilio completadas
+        estatus: { in: ['COMPLETADO_LOCAL', 'ENTREGADO'] } 
+      },
       include: { detalles: { include: { producto: true } } }
     });
     let totalVendido = 0;
