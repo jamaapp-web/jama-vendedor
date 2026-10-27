@@ -19,10 +19,10 @@ model Negocio {
   horaCierre          String     @default("20:00")
   estaActivo          Boolean    @default(true)
   saldo               Float      @default(0.0)
-  latitud             Float?     // NUEVO: Coordenadas
-  longitud            Float?     // NUEVO: Coordenadas
-  aceptaEfectivo      Boolean    @default(true) // NUEVO: Switch
-  aceptaTransferencia Boolean    @default(false) // NUEVO: Switch
+  latitud             Float?     // LISTO PARA EL MAPA
+  longitud            Float?     // LISTO PARA EL MAPA
+  aceptaEfectivo      Boolean    @default(true)
+  aceptaTransferencia Boolean    @default(false)
   productos           Producto[]
   pedidos             Pedido[]
 }
@@ -30,37 +30,37 @@ model Negocio {
 model Cliente {
   id        String   @id 
   nombre    String
-  correo    String
+  correo    String   
   fotoUrl   String?
   pedidos   Pedido[]
 }
 
 model Producto {
-  id         String          @id @default(uuid())
+  id         String           @id @default(uuid())
   negocioId  String
-  negocio    Negocio         @relation(fields: [negocioId], references: [id])
+  negocio    Negocio          @relation(fields: [negocioId], references: [id])
   nombre     String
   precio     Float
   fotoUrl    String?
-  disponible Boolean         @default(true)
+  disponible Boolean          @default(true)
   opciones   OpcionProducto[]
   detalles   DetallePedido[]
 }
 
 model OpcionProducto {
-  id         String   @id @default(uuid())
-  productoId String
-  producto   Producto @relation(fields: [productoId], references: [id])
-  nombre     String
-  precioExtra Float   @default(0.0)
+  id          String   @id @default(uuid())
+  productoId  String
+  producto    Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  nombre      String
+  precioExtra Float    @default(0.0)
 }
 
 model Pedido {
   id         String          @id @default(uuid())
   negocioId  String
   negocio    Negocio         @relation(fields: [negocioId], references: [id])
-  clienteId  String
-  cliente    Cliente         @relation(fields: [clienteId], references: [id])
+  clienteId  String?         // CORREGIDO: Opcional para poder hacer ventas locales en caja
+  cliente    Cliente?        @relation(fields: [clienteId], references: [id])
   fecha      DateTime        @default(now())
   total      Float
   comision   Float           @default(0.0)
@@ -74,7 +74,7 @@ model Pedido {
 model DetallePedido {
   id         String   @id @default(uuid())
   pedidoId   String
-  pedido     Pedido   @relation(fields: [pedidoId], references: [id])
+  pedido     Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   productoId String
   producto   Producto @relation(fields: [productoId], references: [id])
   cantidad   Int
@@ -82,10 +82,13 @@ model DetallePedido {
   notas      String?
 }
 
+// CORREGIDO: Conservamos tu Enum pero con los estatus del backend
 enum EstatusPedido {
   NUEVO
+  PENDIENTE_LOCAL
   COMPLETADO_LOCAL
   BUSCANDO_REPARTIDOR
+  LISTO_PARA_RECOGER
   PREPARANDO
   LISTO_PARA_ENTREGA
   ENTREGADO

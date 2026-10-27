@@ -18,7 +18,10 @@ app.post('/api/login/negocio', async (req, res) => {
     } else {
       res.status(401).json({ error: 'Credenciales inválidas' });
     }
-  } catch (error) { res.status(500).json({ error: 'Error en el servidor' }); }
+  } catch (error) { 
+    console.error("Error en login:", error);
+    res.status(500).json({ error: 'Error en el servidor' }); 
+  }
 });
 
 app.get('/api/negocios', async (req, res) => {
@@ -28,14 +31,20 @@ app.get('/api/negocios', async (req, res) => {
       select: { id: true, nombre: true, categoria: true, fotoUrl: true, horaApertura: true, horaCierre: true }
     });
     res.json(negocios);
-  } catch (error) { res.status(500).json({ error: 'Fallo al cargar negocios' }); }
+  } catch (error) { 
+    console.error("Error al cargar negocios:", error);
+    res.status(500).json({ error: 'Fallo al cargar negocios' }); 
+  }
 });
 
 app.get('/api/negocios/:id', async (req, res) => {
   try {
     const negocio = await prisma.negocio.findUnique({ where: { id: req.params.id } });
     res.json(negocio);
-  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
+  } catch (error) { 
+    console.error("Error al obtener negocio:", error);
+    res.status(500).json({ error: 'Fallo' }); 
+  }
 });
 
 app.put('/api/negocios/:id/horario', async (req, res) => {
@@ -45,10 +54,12 @@ app.put('/api/negocios/:id/horario', async (req, res) => {
       data: { horaApertura: req.body.horaApertura, horaCierre: req.body.horaCierre }
     });
     res.json(negocio);
-  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
+  } catch (error) { 
+    console.error("Error al actualizar horario:", error);
+    res.status(500).json({ error: 'Fallo' }); 
+  }
 });
 
-// NUEVO: Configuración de Ubicación y Pagos
 app.put('/api/negocios/:id/configuracion', async (req, res) => {
   try {
     const { latitud, longitud, aceptaEfectivo, aceptaTransferencia } = req.body;
@@ -57,7 +68,10 @@ app.put('/api/negocios/:id/configuracion', async (req, res) => {
       data: { latitud, longitud, aceptaEfectivo, aceptaTransferencia }
     });
     res.json(negocio);
-  } catch (error) { res.status(500).json({ error: 'Fallo al actualizar configuracion' }); }
+  } catch (error) { 
+    console.error("Error al actualizar configuracion:", error);
+    res.status(500).json({ error: 'Fallo al actualizar configuracion' }); 
+  }
 });
 
 // 2. CLIENTES
@@ -70,7 +84,10 @@ app.post('/api/clientes', async (req, res) => {
       create: { id, nombre, correo, fotoUrl }
     });
     res.json(cliente);
-  } catch (error) { res.status(500).json({ error: 'Fallo al registrar cliente' }); }
+  } catch (error) { 
+    console.error("Error al registrar cliente:", error);
+    res.status(500).json({ error: 'Fallo al registrar cliente' }); 
+  }
 });
 
 // 3. PRODUCTOS Y CATÁLOGO
@@ -81,7 +98,10 @@ app.get('/api/negocios/:id/productos', async (req, res) => {
       include: { opciones: true }
     });
     res.json(productos);
-  } catch (error) { res.status(500).json({ error: 'Fallo al cargar catálogo' }); }
+  } catch (error) { 
+    console.error("Error al cargar productos:", error);
+    res.status(500).json({ error: 'Fallo al cargar catálogo' }); 
+  }
 });
 
 app.post('/api/negocios/:id/productos', async (req, res) => {
@@ -92,7 +112,27 @@ app.post('/api/negocios/:id/productos', async (req, res) => {
       include: { opciones: true }
     });
     res.json(nuevoProducto);
-  } catch (error) { res.status(500).json({ error: 'Error al crear el producto' }); }
+  } catch (error) { 
+    console.error("Error al crear producto:", error);
+    res.status(500).json({ error: 'Error al crear el producto' }); 
+  }
+});
+
+app.post('/api/productos/:id/opciones', async (req, res) => {
+  try {
+    const { nombre, precioExtra } = req.body;
+    const nuevaOpcion = await prisma.opcionProducto.create({
+      data: {
+        nombre,
+        precioExtra,
+        productoId: req.params.id
+      }
+    });
+    res.json(nuevaOpcion);
+  } catch (error) { 
+    console.error("Error al agregar modificador:", error);
+    res.status(500).json({ error: 'Fallo al agregar modificador' }); 
+  }
 });
 
 app.put('/api/productos/:id/disponibilidad', async (req, res) => {
@@ -102,7 +142,10 @@ app.put('/api/productos/:id/disponibilidad', async (req, res) => {
       data: { disponible: req.body.disponible }
     });
     res.json(producto);
-  } catch (error) { res.status(500).json({ error: 'Fallo al actualizar' }); }
+  } catch (error) { 
+    console.error("Error al actualizar disponibilidad:", error);
+    res.status(500).json({ error: 'Fallo al actualizar' }); 
+  }
 });
 
 // 4. PEDIDOS, KDS Y CAJA
@@ -135,7 +178,10 @@ app.post('/api/pedidos', async (req, res) => {
       });
     }
     res.json(pedido);
-  } catch (error) { res.status(500).json({ error: 'Fallo al crear el pedido' }); }
+  } catch (error) { 
+    console.error("Error al crear pedido:", error);
+    res.status(500).json({ error: 'Fallo al crear el pedido' }); 
+  }
 });
 
 app.get('/api/negocios/:id/pedidos', async (req, res) => {
@@ -148,7 +194,10 @@ app.get('/api/negocios/:id/pedidos', async (req, res) => {
       include: { detalles: { include: { producto: true } } }
     });
     res.json(pedidos);
-  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
+  } catch (error) { 
+    console.error("Error al cargar pedidos del KDS:", error);
+    res.status(500).json({ error: 'Fallo' }); 
+  }
 });
 
 app.put('/api/pedidos/:id/estatus', async (req, res) => {
@@ -158,7 +207,10 @@ app.put('/api/pedidos/:id/estatus', async (req, res) => {
       data: { estatus: req.body.estatus }
     });
     res.json(pedido);
-  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
+  } catch (error) { 
+    console.error("Error al actualizar estatus de pedido:", error);
+    res.status(500).json({ error: 'Fallo' }); 
+  }
 });
 
 app.get('/api/negocios/:id/corte', async (req, res) => {
@@ -183,7 +235,10 @@ app.get('/api/negocios/:id/corte', async (req, res) => {
       });
     });
     res.json({ total: totalVendido, resumen: Object.values(items) });
-  } catch (error) { res.status(500).json({ error: 'Fallo' }); }
+  } catch (error) { 
+    console.error("Error al cargar corte de caja:", error);
+    res.status(500).json({ error: 'Fallo' }); 
+  }
 });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
