@@ -1,14 +1,84 @@
 import express from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
+import { createClient } from '@supabase/supabase-js';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 const prisma = new PrismaClient();
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+// NUEVO: Envolvemos Express para soportar WebSockets
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: '*' }
+});
 
+app.use(cors());
+// Aumentamos el límite a 10MB porque las imágenes en Base64 son pesadas
+app.use(express.json({ limit: '10mb' })); 
+
+// Inicializar el cliente de Supabase Storage
+const supabase = createClient(
+  process.env.SUPABASE_URL || "",
+  process.env.SUPABASE_KEY || ""
+);
+
+// ==========================================
+// NUEVO: MOTOR DE TIEMPO REAL (WEBSOCKETS)
+// ==========================================
+io.on('connection', (socket) => {
+  console.log('📱 Cliente conectado al WebSocket:', socket.id);
+  
+  // El KDS de Android se unirá a un "cuarto" con el ID de su negocio
+  socket.on('unirse_cocina', (negocioId) => {
+    socket.join(negocioId);
+    console.log(`Cocinero unido al canal del negocio: ${negocioId}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Cliente desconectado:', socket.id);
+  });
+});
+
+// ==========================================
+// RUTA PARA SUBIR FOTOS (STORAGE)
+// ==========================================
+app.post('/api/upload', async (req, res) => {
+  try {
+    const { imagenBase64, nombreArchivo } = req.body;
+    if (!imagenBase64 || !nombreArchivo) {
+      return res.status(400).json({ error: 'Faltan datos de la imagen' });
+    }
+
+    // Convertimos el texto Base64 de vuelta a un archivo binario
+    const buffer = Buffer.from(imagenBase64, 'base64');
+
+    // Subimos el archivo al bucket "jama-imagenes"
+    const { data, error } = await supabase.storage
+      .from('jama-imagenes')
+      .upload(nombreArchivo, buffer, {
+        contentType: 'image/jpeg',
+        upsert: true // Si ya existe una foto con ese nombre, la reemplaza
+      });
+
+    if (error) throw error;
+
+    // Obtenemos la URL pública para guardarla en la base de datos
+    const { data: urlData } = supabase.storage
+      .from('jama-imagenes')
+      .getPublicUrl(nombreArchivo);
+
+    res.json({ url: urlData.publicUrl });
+  } catch (error) {
+    console.error("Error al subir imagen:", error);
+    res.status(500).json({ error: 'Fallo al subir imagen a Supabase' });
+  }
+});
+
+// ==========================================
 // 1. LOGIN Y NEGOCIOS
+// ==========================================
 app.post('/api/login/negocio', async (req, res) => {
   const { correo, password } = req.body;
   try {
@@ -62,10 +132,10 @@ app.put('/api/negocios/:id/horario', async (req, res) => {
 
 app.put('/api/negocios/:id/configuracion', async (req, res) => {
   try {
-    const { latitud, longitud, aceptaEfectivo, aceptaTransferencia } = req.body;
+    const { latitud, longitud, aceptaEfectivo, aceptaTransferencia, fotoUrl } = req.body;
     const negocio = await prisma.negocio.update({
       where: { id: req.params.id },
-      data: { latitud, longitud, aceptaEfectivo, aceptaTransferencia }
+      data: { latitud, longitud, aceptaEfectivo, aceptaTransferencia, fotoUrl }
     });
     res.json(negocio);
   } catch (error) { 
@@ -74,7 +144,9 @@ app.put('/api/negocios/:id/configuracion', async (req, res) => {
   }
 });
 
+// ==========================================
 // 2. CLIENTES
+// ==========================================
 app.post('/api/clientes', async (req, res) => {
   const { id, nombre, correo, fotoUrl } = req.body;
   try {
@@ -90,7 +162,9 @@ app.post('/api/clientes', async (req, res) => {
   }
 });
 
+// ==========================================
 // 3. PRODUCTOS Y CATÁLOGO
+// ==========================================
 app.get('/api/negocios/:id/productos', async (req, res) => {
   try {
     const productos = await prisma.producto.findMany({ 
@@ -106,9 +180,9 @@ app.get('/api/negocios/:id/productos', async (req, res) => {
 
 app.post('/api/negocios/:id/productos', async (req, res) => {
   try {
-    const { nombre, precio } = req.body;
+    const { nombre, precio, fotoUrl } = req.body;
     const nuevoProducto = await prisma.producto.create({
-      data: { nombre, precio, disponible: true, negocioId: req.params.id },
+      data: { nombre, precio, fotoUrl, disponible: true, negocioId: req.params.id },
       include: { opciones: true }
     });
     res.json(nuevoProducto);
@@ -148,7 +222,9 @@ app.put('/api/productos/:id/disponibilidad', async (req, res) => {
   }
 });
 
+// ==========================================
 // 4. PEDIDOS, KDS Y CAJA
+// ==========================================
 app.post('/api/pedidos', async (req, res) => {
   const { negocioId, clienteId, tipoVenta, metodoPago, detalles } = req.body;
   try {
@@ -177,6 +253,10 @@ app.post('/api/pedidos', async (req, res) => {
         data: { saldo: negocio.saldo - comision, estaActivo: (negocio.saldo - comision) >= 10 }
       });
     }
+
+    // 🔥 MAGIA: Le avisamos a la cocina de este negocio que recargue su pantalla
+    io.to(negocioId).emit('recargar_kds');
+
     res.json(pedido);
   } catch (error) { 
     console.error("Error al crear pedido:", error);
@@ -202,10 +282,18 @@ app.get('/api/negocios/:id/pedidos', async (req, res) => {
 
 app.put('/api/pedidos/:id/estatus', async (req, res) => {
   try {
+    const pedidoOriginal = await prisma.pedido.findUnique({ where: { id: req.params.id } });
+    
     const pedido = await prisma.pedido.update({
       where: { id: req.params.id },
       data: { estatus: req.body.estatus }
     });
+    
+    // 🔥 MAGIA: Avisamos a los celulares que el estatus cambió (para que se borre de la pantalla)
+    if (pedidoOriginal) {
+      io.to(pedidoOriginal.negocioId).emit('recargar_kds');
+    }
+
     res.json(pedido);
   } catch (error) { 
     console.error("Error al actualizar estatus de pedido:", error);
@@ -242,4 +330,5 @@ app.get('/api/negocios/:id/corte', async (req, res) => {
 });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-app.listen(PORT, '0.0.0.0', () => { console.log(`API Multi-Tenant lista en puerto ${PORT}`); });
+// MUY IMPORTANTE: Usamos httpServer en lugar de app
+httpServer.listen(PORT, '0.0.0.0', () => { console.log(`API y WebSockets listos en puerto ${PORT}`); });
