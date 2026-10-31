@@ -240,7 +240,8 @@ app.post('/api/pedidos', async (req, res) => {
         metodoPago: metodoPago || "EFECTIVO",
         total,
         comision,
-        estatus: tipoVenta === 'LOCAL' ? 'PENDIENTE_LOCAL' : 'BUSCANDO_REPARTIDOR',
+        // 🔥 CAMBIO AQUÍ: Ahora nace como PENDIENTE para que la cocina lo acepte primero
+        estatus: tipoVenta === 'LOCAL' ? 'PENDIENTE_LOCAL' : 'PENDIENTE',
         nipEntrega: tipoVenta === 'LOCAL' ? null : Math.floor(1000 + Math.random() * 9000).toString(),
         detalles: { create: detalles }
       },
@@ -256,10 +257,6 @@ app.post('/api/pedidos', async (req, res) => {
 
     // 🔥 MAGIA: Le avisamos a la cocina de este negocio que recargue su pantalla
     io.to(negocioId).emit('recargar_kds');
-    // Le avisamos a los repartidores que hay un pedido nuevo
-    if (pedido.estatus === 'BUSCANDO_REPARTIDOR') {
-      io.emit('recargar_kds'); 
-    }
 
     res.json(pedido);
   } catch (error) { 
@@ -307,12 +304,13 @@ app.put('/api/pedidos/:id/estatus', async (req, res) => {
       data: { estatus: req.body.estatus }
     });
     
-    // 🔥 MAGIA: Avisamos a los celulares que el estatus cambió (para que se borre de la pantalla)
+    // 🔥 MAGIA: Avisamos a la cocina que el estatus cambió (para que se borre o actualice en su pantalla)
     if (pedidoOriginal) {
       io.to(pedidoOriginal.negocioId).emit('recargar_kds');
     }
-    // Si un repartidor acepta, actualizamos el radar de los demás
-    if (req.body.estatus === 'REPARTIDOR_ASIGNADO') {
+    
+    // 🔥 CAMBIO AQUÍ: Despertamos a los choferes SOLO cuando la cocina busca repartidor, o cuando otro chofer lo acepta
+    if (req.body.estatus === 'BUSCANDO_REPARTIDOR' || req.body.estatus === 'REPARTIDOR_ASIGNADO') {
        io.emit('recargar_kds');
     }
 
