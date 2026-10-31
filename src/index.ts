@@ -256,6 +256,10 @@ app.post('/api/pedidos', async (req, res) => {
 
     // 🔥 MAGIA: Le avisamos a la cocina de este negocio que recargue su pantalla
     io.to(negocioId).emit('recargar_kds');
+    // Le avisamos a los repartidores que hay un pedido nuevo
+    if (pedido.estatus === 'BUSCANDO_REPARTIDOR') {
+      io.emit('recargar_kds'); 
+    }
 
     res.json(pedido);
   } catch (error) { 
@@ -280,6 +284,20 @@ app.get('/api/negocios/:id/pedidos', async (req, res) => {
   }
 });
 
+// 🔥 NUEVO: Ruta para que el radar de la app del repartidor encuentre los pedidos a domicilio
+app.get('/api/pedidos/disponibles', async (req, res) => {
+  try {
+    const viajes = await prisma.pedido.findMany({
+      where: { estatus: 'BUSCANDO_REPARTIDOR' },
+      include: { negocio: { select: { nombre: true, latitud: true, longitud: true } } }
+    });
+    res.json(viajes);
+  } catch (error) { 
+    console.error("Error al buscar viajes:", error);
+    res.status(500).json({ error: 'Fallo al buscar viajes' }); 
+  }
+});
+
 app.put('/api/pedidos/:id/estatus', async (req, res) => {
   try {
     const pedidoOriginal = await prisma.pedido.findUnique({ where: { id: req.params.id } });
@@ -292,6 +310,10 @@ app.put('/api/pedidos/:id/estatus', async (req, res) => {
     // 🔥 MAGIA: Avisamos a los celulares que el estatus cambió (para que se borre de la pantalla)
     if (pedidoOriginal) {
       io.to(pedidoOriginal.negocioId).emit('recargar_kds');
+    }
+    // Si un repartidor acepta, actualizamos el radar de los demás
+    if (req.body.estatus === 'REPARTIDOR_ASIGNADO') {
+       io.emit('recargar_kds');
     }
 
     res.json(pedido);
