@@ -85,6 +85,7 @@ model DetallePedido {
 // CORREGIDO: Conservamos tu Enum pero con los estatus del backend
 enum EstatusPedido {
   NUEVO
+  PENDIENTE
   PENDIENTE_LOCAL
   COMPLETADO_LOCAL
   BUSCANDO_REPARTIDOR
